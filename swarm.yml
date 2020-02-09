@@ -1,0 +1,32 @@
+version: "3.7"
+
+services:
+
+  worker1:
+    image: rmq-test-rig_worker1:latest
+    env_file:
+      - ./worker1/environment
+    volumes:
+      - ./worker1/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  producer:
+    image: rmq-test-rig_producer:latest
+    env_file:
+      - ./producer/environment
+    volumes:
+      - ./producer/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  rabbitmq:
+    image: "rabbitmq:management"
+    logging:
+      driver: none
+    ports:
+      - 15672:15672
+
+

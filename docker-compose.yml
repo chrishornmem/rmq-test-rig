@@ -1,0 +1,60 @@
+version: "3.7"
+
+services:
+
+  worker1:
+    build:
+      context: ./
+      dockerfile: ./worker1/Dockerfile
+    env_file:
+      - ./worker1/environment
+    volumes:
+      - ./worker1/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  worker2:
+    build:
+      context: ./
+      dockerfile: ./worker1/Dockerfile
+    env_file:
+      - ./worker2/environment
+    volumes:
+      - ./worker1/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  worker3:
+    build:
+      context: ./
+      dockerfile: ./worker1/Dockerfile
+    env_file:
+      - ./worker3/environment
+    volumes:
+      - ./worker1/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  producer:
+    build:
+      context: ./
+      dockerfile: ./producer/Dockerfile
+    env_file:
+      - ./producer/environment
+    volumes:
+      - ./producer/src:/usr/src/app/src/
+      - ./node_modules:/usr/src/node_modules
+    depends_on:
+      - rabbitmq
+
+  rabbitmq:
+    image: "rabbitmq:management"
+    logging:
+      driver: none
+    ports:
+      - 15672:15672
+
+
