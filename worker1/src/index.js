@@ -67,12 +67,21 @@ if ('development' == app.get('env')) {
 }
 const connection = amqp.connect([process.env.RMQ_HOST], {json:true});
 
+let bindings = require('../binding/bindings.json');
+let initialBindings = [];
+for (let b of bindings) {
+    initialBindings.push(b)
+}
 let channelWrapper
 
+logger.info("bindings:")
+logger.info(Array.isArray(bindings))
+
 function handleMessage(params) {
-    logger.info("/handleMessage:"+process.env.ROUTING_KEY)
-    logger.info(JSON.parse(params.content.toString('utf8')));
     channelWrapper.ack(params)
+    const msg = JSON.parse(params.content.toString('utf8'));
+    logger.info("got msg:"+JSON.stringify(msg))
+    logger.info((initialBindings.includes(msg.key)).toString().toUpperCase())
 }
 
 // Ask the connection manager for a ChannelWrapper.  Specify a setup function to
@@ -86,8 +95,8 @@ channelWrapper = connection.createChannel({
             channel.assertExchange('exchange', 'direct', { durable: false }),
             channel.assertQueue(process.env.QUEUE),
             channel.bindQueue(process.env.QUEUE, 'exchange', process.env.ROUTING_KEY),
-            channel.prefetch(1),
-            channel.consume(process.env.QUEUE, handleMessage, )])
+            channel.prefetch(100),
+            channel.consume(process.env.QUEUE, handleMessage)])
     }
 });
 
@@ -113,6 +122,22 @@ channelWrapper = connection.createChannel({
 // setTimeout(function() {
 //     exchange.consume('exchange');
 // },5000);
+
+function addBinding() {
+    if (channelWrapper) {
+        const newKey = bindings.pop()
+        if (newKey) {
+            channelWrapper.addSetup(function(channel) {
+                logger.info("binding to key: "+ newKey)                
+                channel.bindQueue(process.env.QUEUE, 'exchange', newKey)
+            });
+        } else {
+            clearInterval(timer)
+        }
+    }
+}
+
+let timer = setInterval(addBinding,5)
 
 server.listen(theport);
 logger.info("listening on port:" + theport)
