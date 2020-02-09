@@ -13,5 +13,7 @@ $ docker-compose up -d
 
 Check output using
 
-```$ docker-compose logs -f```
+```
+$ docker-compose logs -f
+```
 
