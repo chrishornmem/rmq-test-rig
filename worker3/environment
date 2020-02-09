@@ -1,0 +1,7 @@
+PORT=8083
+DEBUG=rmq-test-rig
+DEBUG_LEVEL=INFO
+RMQ_HOST=amqp://rabbitmq:5672
+QUEUE=WORKER-3
+ROUTING_KEY=key.3
+

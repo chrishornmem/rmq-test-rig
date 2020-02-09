@@ -1,0 +1,6 @@
+PORT=8081
+DEBUG=rmq-test-rig
+DEBUG_LEVEL=INFO
+RMQ_HOST=amqp://rabbitmq:5672
+QUEUE=WORKER-2
+ROUTING_KEY=key.2
