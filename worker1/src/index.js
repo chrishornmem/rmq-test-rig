@@ -12,8 +12,20 @@ const errorHandler = require('errorhandler');
 // const exchange = new Exchange(process.env.RMQ_HOST, 'exchange', 'direct')
 // exchange.initialize()
 
-const amqp = require('amqp-connection-manager')
-
+//const amqp = require('amqp-connection-manager')
+const { connect, Exchange } = require('./rmq')
+let exchange, timer
+connect(process.env.RMQ_HOST).then(() => {
+    exchange = new Exchange('exchange')
+    return exchange.initializeExchange()
+}).then(() => {
+    return exchange.subscribe('rpc_queue', handleMessage)
+// }).then(() => {
+//     timer = setInterval(addBinding, 1000)
+}).catch((error) => {
+    logger.error(error)
+    logger.error("Failed to connect");
+});
 // Bring in the routes for the API (delete the default routes)
 
 // The http server will listen to an appropriate port, or default to
@@ -41,21 +53,21 @@ app.use(express.static(path.join(__dirname, public_folder)));
 // Force HTTPS on Heroku
 // if (app.get('env') === 'production') {
 if (process.env.HTTPS === 'ON') {
-    app.use(function(req, res, next) {
+    app.use(function (req, res, next) {
         const protocol = req.get('x-forwarded-proto');
         protocol == 'https' ? next() : res.redirect('https://' + req.hostname + req.url);
     });
 }
 
-app.get('/', function(req, res, next) {
+app.get('/', function (req, res, next) {
     res.sendFile('/' + public_folder + '/index.html', { root: __dirname });
 });
 
-app.get('*', function(req, res) {
+app.get('*', function (req, res) {
     res.sendFile('/' + public_folder + '/index.html', { root: __dirname });
 });
 
-app.get('/*', function(req, res, next) {
+app.get('/*', function (req, res, next) {
     logger.info("caught default route");
     // Just send the index.html for other files to support HTML5Mode
     res.sendFile('/' + public_folder + '/index.html', { root: __dirname });
@@ -65,7 +77,7 @@ app.get('/*', function(req, res, next) {
 if ('development' == app.get('env')) {
     app.use(errorHandler());
 }
-const connection = amqp.connect([process.env.RMQ_HOST], {json:true});
+//const connection = amqp.connect([process.env.RMQ_HOST], {json:true});
 
 let bindings = require('../binding/bindings.json');
 let initialBindings = [];
@@ -78,27 +90,30 @@ logger.info("bindings:")
 logger.info(Array.isArray(bindings))
 
 function handleMessage(params) {
-    channelWrapper.ack(params)
+    exchange.ack(params)
     const msg = JSON.parse(params.content.toString('utf8'));
-    logger.info("got msg:"+JSON.stringify(msg))
+    logger.info("got msg:" + JSON.stringify(msg))
     logger.info((initialBindings.includes(msg.key)).toString().toUpperCase())
+
+    exchange.replyToRPC(params, {reply:'reply text'})
+
 }
 
 // Ask the connection manager for a ChannelWrapper.  Specify a setup function to
 // run every time we reconnect to the broker.
-channelWrapper = connection.createChannel({
-    json: true,
-    setup: function(channel) {
-        // `channel` here is a regular amqplib `ConfirmChannel`.
-        // Note that `this` here is the channelWrapper instance.
-        return Promise.all([
-            channel.assertExchange('exchange', 'direct', { durable: false }),
-            channel.assertQueue(process.env.QUEUE),
-            channel.bindQueue(process.env.QUEUE, 'exchange', process.env.ROUTING_KEY),
-            channel.prefetch(100),
-            channel.consume(process.env.QUEUE, handleMessage)])
-    }
-});
+// channelWrapper = connection.createChannel({
+//     json: true,
+//     setup: function(channel) {
+//         // `channel` here is a regular amqplib `ConfirmChannel`.
+//         // Note that `this` here is the channelWrapper instance.
+//         return Promise.all([
+//             channel.assertExchange('exchange', 'direct', { durable: false }),
+//             channel.assertQueue(process.env.QUEUE),
+//             channel.bindQueue(process.env.QUEUE, 'exchange', process.env.ROUTING_KEY),
+//             channel.prefetch(100),
+//             channel.consume(process.env.QUEUE, handleMessage)])
+//     }
+// });
 
 // channelWrapper.addSetup(function(channel) {
 //     return Promise.all([
@@ -123,21 +138,22 @@ channelWrapper = connection.createChannel({
 //     exchange.consume('exchange');
 // },5000);
 
-function addBinding() {
-    if (channelWrapper) {
-        const newKey = bindings.pop()
-        if (newKey) {
-            channelWrapper.addSetup(function(channel) {
-                logger.info("binding to key: "+ newKey)                
-                channel.bindQueue(process.env.QUEUE, 'exchange', newKey)
-            });
-        } else {
-            clearInterval(timer)
+async function addBinding() {
+    const newKey = bindings.pop()
+    if (newKey) {
+        try {
+            await exchange.subscribe(process.env.QUEUE, handleMessage, newKey)
+        } catch (error) {
+            if (newKey) {
+                bindings.push(newKey)
+            }
+            logger.error("Channel not ready")
         }
+    } else {
+        clearInterval(timer)
     }
 }
 
-let timer = setInterval(addBinding,5)
 
 server.listen(theport);
 logger.info("listening on port:" + theport)

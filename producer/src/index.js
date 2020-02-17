@@ -11,8 +11,21 @@ const errorHandler = require('errorhandler');
 // const rmq = require('./rmq.js');
 // const exchange = new Exchange('exchange', 'direct')
 // rmq.connect(process.env.RMQ_HOST)
-const amqp = require('amqp-connection-manager')
-const connection = amqp.connect([process.env.RMQ_HOST], { json: true });
+// const amqp = require('amqp-connection-manager')
+// const connection = amqp.connect([process.env.RMQ_HOST], { json: true });
+
+const { connect, Exchange } = require('./rmq')
+let exchange, timer
+connect(process.env.RMQ_HOST).then(() => {
+    exchange = new Exchange('exchange')
+    return exchange.initialzeDirectRPC()
+}).then(() => {
+    setInterval(sendRPC, 1000);
+    // timer = setInterval(addBinding, 1000)
+}).catch((error) => {
+    logger.error(error)
+    logger.error("Failed to connect");
+});
 
 // Bring in the routes for the API (delete the default routes)
 
@@ -68,37 +81,37 @@ if ('development' == app.get('env')) {
 
 // Ask the connection manager for a ChannelWrapper.  Specify a setup function to
 // run every time we reconnect to the broker.
-let channelWrapper = connection.createChannel({
-    json: true,
-    setup: function (channel) {
-        // `channel` here is a regular amqplib `ConfirmChannel`.
-        // Note that `this` here is the channelWrapper instance.
-        return channel.assertQueue('rxQueueName', { durable: true });
-    }
-});
+// let channelWrapper = connection.createChannel({
+//     json: true,
+//     setup: function (channel) {
+//         // `channel` here is a regular amqplib `ConfirmChannel`.
+//         // Note that `this` here is the channelWrapper instance.
+//         return channel.assertQueue('rxQueueName', { durable: true });
+//     }
+// });
 
-let publishChannel = connection.createChannel({
-    json: true,
-    setup: function (channel) {
-        // `channel` here is a regular amqplib `ConfirmChannel`.
-        // Note that `this` here is the channelWrapper instance.
-        return channel.assertExchange('exchange', 'direct', { durable: false })
-    }
-});
+// let publishChannel = connection.createChannel({
+//     json: true,
+//     setup: function (channel) {
+//         // `channel` here is a regular amqplib `ConfirmChannel`.
+//         // Note that `this` here is the channelWrapper instance.
+//         return channel.assertExchange('exchange', 'direct', { durable: false })
+//     }
+// });
 
 
 // Send some messages to the queue.  If we're not currently connected, these will be queued up in memory
 // until we connect.  Note that `sendToQueue()` and `publish()` return a Promise which is fulfilled or rejected
 // when the message is actually sent (or not sent.)
 
-const send = function () {
-    channelWrapper.sendToQueue('rxQueueName', { hello: 'world' })
-        .then(function () {
-            return logger.info("Message was sent!  Hooray!");
-        }).catch(function (err) {
-            return logger.info("Message was rejected...  Boo!");
-        });
-}
+// const send = function () {
+//     channelWrapper.sendToQueue('rxQueueName', { hello: 'world' })
+//         .then(function () {
+//             return logger.info("Message was sent!  Hooray!");
+//         }).catch(function (err) {
+//             return logger.info("Message was rejected...  Boo!");
+//         });
+// }
 
 let count = 1;
 
@@ -106,20 +119,35 @@ let bindings = require('../binding/all.json')
 let bindingIndex = 0;
 
 const publish = function () {
-    publishChannel.publish('exchange', bindings[bindingIndex], { msg: count, key: bindings[bindingIndex] })
-        .then(function () {
+    exchange.publish(bindings[bindingIndex], { msg: count, key: bindings[bindingIndex] })
+        .then(() => {
             logger.info(`Message ${count} was sent using ${bindings[bindingIndex]}`);
             if (count === 3) count = 0;
             count++;
             bindingIndex++;
             if (bindingIndex === bindings.length) bindingIndex = 0;
-        }).catch(function (err) {
-            return logger.info("Message was rejected...  Boo!");
+        }).catch((err) =>  {
+           logger.error("Message was rejected...  Boo!");
         });
 }
 
 //publish()
-setInterval(publish, 5);
+
+const sendRPC = function () {
+    exchange.sendRPCMessage({ msg: count, key: bindings[bindingIndex] })
+        .then(() => {
+            logger.info(`Message ${count} was sent using ${bindings[bindingIndex]}`);
+            if (count === 3) count = 0;
+            count++;
+            bindingIndex++;
+            if (bindingIndex === bindings.length) bindingIndex = 0;
+        }).catch((err) =>  {
+            logger.error(err)
+           logger.error("Message was rejected...  Boo!");
+        });
+}
+
+
 
 // async function sendMsg(message) {
 //     try {

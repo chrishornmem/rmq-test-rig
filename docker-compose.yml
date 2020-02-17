@@ -12,8 +12,6 @@ services:
       - ./worker1/src:/usr/src/app/src/
       - ./worker1/binding:/usr/src/app/binding/
       - ./node_modules:/usr/src/node_modules
-    depends_on:
-      - rabbitmq
 
   worker2:
     build:
@@ -25,8 +23,6 @@ services:
       - ./worker1/src:/usr/src/app/src/
       - ./worker2/binding:/usr/src/app/binding/
       - ./node_modules:/usr/src/node_modules
-    depends_on:
-      - rabbitmq
 
   worker3:
     build:
@@ -38,8 +34,6 @@ services:
       - ./worker1/src:/usr/src/app/src/
       - ./worker3/binding:/usr/src/app/binding/
       - ./node_modules:/usr/src/node_modules
-    depends_on:
-      - rabbitmq
 
   producer:
     build:
@@ -51,8 +45,6 @@ services:
       - ./producer/src:/usr/src/app/src/
       - ./producer/binding:/usr/src/app/binding/
       - ./node_modules:/usr/src/node_modules
-    depends_on:
-      - rabbitmq
 
   rabbitmq:
     image: "rabbitmq:management"
