@@ -178,7 +178,9 @@ Exchange.prototype.sendRPCMessage = function (message) {
 
 Exchange.prototype.replyToRPC = async function (msg, reply) {
     let self = this;
-    self.exchangeChannel.sendToQueue(msg.properties.replyTo, reply);
+    self.exchangeChannel.sendToQueue(msg.properties.replyTo, reply, {
+        correlationId: msg.properties.correlationId
+    });
     return
 }
 

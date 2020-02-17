@@ -45,16 +45,19 @@ Exchange.prototype.initialzeDirectRPC = async function () {
         async setup(channel) {
             // channel.assertQueue('', { exclusive: true });
             const q = await channel.assertQueue('', { exclusive: true });
+            this.context.responseEmitter = new EventEmitter()
+            this.context.responseEmitter.setMaxListeners(0)
             this.context.q = q; 
             channel.consume(
                 q.queue,
                 msg => {
                     logger.info("got message:")
+                    logger.info(msg)
                     logger.info(JSON.parse(msg.content.toString('utf8')))
-                    // self.directChannel.context.responseEmitter.emit(
-                    //     msg.properties.correlationId,
-                    //     JSON.parse(msg.content.toString('utf8'))
-                    // )
+                    self.directChannel.context.responseEmitter.emit(
+                        msg.properties.correlationId,
+                        JSON.parse(msg.content.toString('utf8'))
+                    )
                 },
                 { noAck: true }
             )
@@ -155,21 +158,43 @@ Exchange.prototype.publish = async function (routingKey, message, options) {
 Exchange.prototype.sendRPCMessage = async function (message) {
 
     let self = this;
-    const id = uuid();
+    // const id = uuid();
     const q = self.directChannel.context.q;
 
-    self.directChannel.sendToQueue('rpc_queue', new Buffer(message.toString()),
-    { correlationId: id, replyTo: q.queue })
-    .then((message) => {
-      console.log('Message sent');
-      console.log(message)
-    }).catch((err) => {
-      console.log('Message was rejected:', err.stack);
-    //   self.directChannel.close();
-    //   connection.close();
-        throw err
-    });
-    return true
+    // self.directChannel.sendToQueue('rpc_queue', new Buffer(message.toString()),
+    // { correlationId: id, replyTo: q.queue })
+    // .then((message) => {
+    //   console.log('Message sent');
+    //   console.log(message)
+    // }).catch((err) => {
+    //   console.log('Message was rejected:', err.stack);
+    // //   self.directChannel.close();
+    // //   connection.close();
+    //     throw err
+    // });
+    // return true
+
+
+    return new Promise((resolve, reject) => {
+        const correlationId = uuid()
+        let timer
+
+        self.directChannel.context.responseEmitter.once(correlationId, (response) => {
+            clearTimeout(timer)
+            resolve(response)
+        })
+
+        timer = setTimeout(() => {
+            logger.error("/sendRPCMessage - response not received within 10s")
+            reject("Message not received within required time")
+        }, 10000)
+
+        self.directChannel.sendToQueue('rpc_queue', message, {
+            correlationId,
+            replyTo: q.queue
+        })
+    })
+
 }
 
 
