@@ -46,7 +46,6 @@ Exchange = function (name, type = 'direct', options = { durable: false }) {
     this.name = name
     this.type = type
     this.options = options
-    this.queues = {}
 }
 
 Exchange.prototype.initializeExchange = async function () {
@@ -117,15 +116,12 @@ Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey
 
     let self = this
     
-    self.addQueue(queue, routingKey)
-
     this.exchangeChannel.addSetup(async function (channel) {
         try {
             await channel.assertQueue(queue, {messageTtl:messageTtl})
             await channel.bindQueue(queue, self.name, routingKey)
             await channel.prefetch(prefetch)
-            let consume = await channel.consume(queue, consumeHandler)
-            self.addConsumer(queue, routingKey, consume.consumerTag)
+            await channel.consume(queue, consumeHandler)
         } catch (e) {
             logger.error(e)
             throw e
@@ -133,27 +129,10 @@ Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey
     });
 }
 
-Exchange.prototype.addQueue = function (queue, routingKey) {
-    let index = queue + '-' + routingKey
-    if (!this.queues[index]) this.queues[index] = {}
-}
-
-Exchange.prototype.addConsumer = function (queue, routingKey, consumerTag) {
-    let index = queue + '-' + routingKey
-    if (!this.queues[index]) this.queues[index] = {}
-    this.queues[index].consumerTag = consumerTag
-}
-
 Exchange.prototype.unsubscribe = function (queue, routingKey = queue) {
     logger.info("/unsubscribe")
-    let self = this
-    let index = queue + '-' + routingKey
-
-    if (!this.queues[index]) throw "Unknown queue-routingKey:" + index
-    let tag = this.queues[index].consumerTag
-    logger.info("tag:"+tag)
-    if (!tag || !this.exchangeChannel) return false
-    return this.exchangeChannel.context.channel.unbindQueue(queue, self.name, routingKey)
+    if (!this.exchangeChannel) return false
+    return this.exchangeChannel.context.channel.unbindQueue(queue, this.name, routingKey)
 }
 
 /**
