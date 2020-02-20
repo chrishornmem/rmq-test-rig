@@ -45,8 +45,6 @@ Exchange = function (name, type = 'direct', options = { durable: false }) {
     this.name = name
     this.type = type
     this.options = options
-    logger.info("new Exchange this.name:" + this.name)
-
 }
 
 Exchange.prototype.initialzeDirectRPC = async function () {
@@ -62,9 +60,6 @@ Exchange.prototype.initialzeDirectRPC = async function () {
             channel.consume(
                 q.queue,
                 msg => {
-                    logger.info("got message:")
-                    logger.info(msg)
-                    logger.info(JSON.parse(msg.content.toString('utf8')))
                     self.directChannel.context.responseEmitter.emit(
                         msg.properties.correlationId,
                         JSON.parse(msg.content.toString('utf8'))
@@ -118,7 +113,7 @@ Exchange.prototype.publish = async function (routingKey, message, options) {
     return this.exchangeChannel.publish(this.name, routingKey, message, options);
 }
 
-Exchange.prototype.sendRPCMessage = async function (message) {
+Exchange.prototype.sendRPCMessage = async function (queue, message) {
 
     let self = this;
 
@@ -127,9 +122,7 @@ Exchange.prototype.sendRPCMessage = async function (message) {
         if (!self.directChannel ||
             !self.directChannel.context ||
             !self.directChannel.context.responseEmitter) {
-
             reject("Channel not initialized")
-
         } else {
 
             let timer
@@ -147,7 +140,7 @@ Exchange.prototype.sendRPCMessage = async function (message) {
                 reject("Message not received within required time")
             }, RMQ_RPC_TIMEOUT)
 
-            self.directChannel.sendToQueue('rpc_queue', message, {
+            self.directChannel.sendToQueue(queue, message, {
                 correlationId,
                 replyTo: q.queue
             })

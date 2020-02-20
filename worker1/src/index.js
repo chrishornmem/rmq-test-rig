@@ -8,21 +8,16 @@ const path = require('path');
 const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
 const errorHandler = require('errorhandler');
-// const Exchange = require('./rmq.js').Exchange
-// const exchange = new Exchange(process.env.RMQ_HOST, 'exchange', 'direct')
-// exchange.initialize()
 
-//const amqp = require('amqp-connection-manager')
 const { connect, Exchange } = require('./rmq')
 let exchange, timer
 connect(process.env.RMQ_HOST).then(() => {
     exchange = new Exchange('exchange')
     return exchange.initializeExchange()
 }).then(() => {
-    logger.info("subscribing to rpc_queue")
-    return exchange.subscribe('rpc_queue', handleMessage)
-// }).then(() => {
-//     timer = setInterval(addBinding, 1000)
+    return exchange.subscribe('rpc_queue', handleRPCMessage)
+}).then(() => {
+    timer = setInterval(addBinding, 1000)
 }).catch((error) => {
     logger.error(error)
     logger.error("Failed to connect")
@@ -86,7 +81,6 @@ let initialBindings = [];
 for (let b of bindings) {
     initialBindings.push(b)
 }
-let channelWrapper
 
 logger.info("bindings:")
 logger.info(Array.isArray(bindings))
@@ -97,48 +91,15 @@ function handleMessage(params) {
     logger.info("got msg:" + JSON.stringify(msg))
     logger.info((initialBindings.includes(msg.key)).toString().toUpperCase())
 
-    exchange.replyToRPC(params, {reply:'reply text'})
-
 }
 
-// Ask the connection manager for a ChannelWrapper.  Specify a setup function to
-// run every time we reconnect to the broker.
-// channelWrapper = connection.createChannel({
-//     json: true,
-//     setup: function(channel) {
-//         // `channel` here is a regular amqplib `ConfirmChannel`.
-//         // Note that `this` here is the channelWrapper instance.
-//         return Promise.all([
-//             channel.assertExchange('exchange', 'direct', { durable: false }),
-//             channel.assertQueue(process.env.QUEUE),
-//             channel.bindQueue(process.env.QUEUE, 'exchange', process.env.ROUTING_KEY),
-//             channel.prefetch(100),
-//             channel.consume(process.env.QUEUE, handleMessage)])
-//     }
-// });
+function handleRPCMessage(params) {
+    exchange.ack(params)
+    const msg = JSON.parse(params.content.toString('utf8'));
+    logger.info("got msg:" + JSON.stringify(msg))
+    exchange.replyToRPC(params, {reply:'replying to RPC'})
 
-// channelWrapper.addSetup(function(channel) {
-//     return Promise.all([
-//         channel.assertQueue('WORKER'),
-//         channel.bindQueue('WORKER', 'exchange', 'KEY-1'),
-//         channel.prefetch(1),
-//         channel.consume('WORKER', handleMessage)
-//     ]);
-// });
-
-// Send some messages to the queue.  If we're not currently connected, these will be queued up in memory
-// until we connect.  Note that `sendToQueue()` and `publish()` return a Promise which is fulfilled or rejected
-// when the message is actually sent (or not sent.)
-// channelWrapper.sendToQueue('rxQueueName', {hello: 'world'})
-// .then(function() {
-//     return logger.info("Message was sent!  Hooray!");
-// }).catch(function(err) {
-//     return logger.info("Message was rejected...  Boo!");
-// });
-
-// setTimeout(function() {
-//     exchange.consume('exchange');
-// },5000);
+}
 
 async function addBinding() {
     const newKey = bindings.pop()
@@ -155,7 +116,6 @@ async function addBinding() {
         clearInterval(timer)
     }
 }
-
 
 server.listen(theport);
 logger.info("listening on port:" + theport)

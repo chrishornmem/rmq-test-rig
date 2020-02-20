@@ -2,7 +2,6 @@ const logger = require('debug-level')('rmq-test-rig')
 const amqp = require('amqp-connection-manager')
 const EventEmitter = require('events')
 const { uuid } = require('uuidv4')
-const RMQ_REPLY_QUEUE = 'amq.rabbitmq.reply-to'
 const RMQ_RPC_TIMEOUT = 10000
 const RMQ_CONNECT_TIMEOUT = 120 * 1000 // 2 mins
 
@@ -46,8 +45,6 @@ Exchange = function (name, type = 'direct', options = { durable: false }) {
     this.name = name
     this.type = type
     this.options = options
-    logger.info("new Exchange this.name:" + this.name)
-
 }
 
 Exchange.prototype.initialzeDirectRPC = async function () {
@@ -57,17 +54,16 @@ Exchange.prototype.initialzeDirectRPC = async function () {
         async setup(channel) {
             // channel.assertQueue('', { exclusive: true });
             const q = await channel.assertQueue('', { exclusive: true });
+            this.context.responseEmitter = new EventEmitter()
+            this.context.responseEmitter.setMaxListeners(0)
             this.context.q = q;
-            logger.info("QUEUE IS")
-            logger.info(q)
             channel.consume(
                 q.queue,
                 msg => {
-                    console.log("got message:" + msg.properties.correlationId)
-                    // self.directChannel.context.responseEmitter.emit(
-                    //     msg.properties.correlationId,
-                    //     JSON.parse(msg.content.toString('utf8'))
-                    // )
+                    self.directChannel.context.responseEmitter.emit(
+                        msg.properties.correlationId,
+                        JSON.parse(msg.content.toString('utf8'))
+                    )
                 },
                 { noAck: true }
             )
@@ -117,7 +113,7 @@ Exchange.prototype.publish = async function (routingKey, message, options) {
     return this.exchangeChannel.publish(this.name, routingKey, message, options);
 }
 
-Exchange.prototype.sendRPCMessage = async function (message) {
+Exchange.prototype.sendRPCMessage = async function (queue, message) {
 
     let self = this;
 
@@ -126,9 +122,7 @@ Exchange.prototype.sendRPCMessage = async function (message) {
         if (!self.directChannel ||
             !self.directChannel.context ||
             !self.directChannel.context.responseEmitter) {
-
             reject("Channel not initialized")
-
         } else {
 
             let timer
@@ -146,7 +140,7 @@ Exchange.prototype.sendRPCMessage = async function (message) {
                 reject("Message not received within required time")
             }, RMQ_RPC_TIMEOUT)
 
-            self.directChannel.sendToQueue('rpc_queue', message, {
+            self.directChannel.sendToQueue(queue, message, {
                 correlationId,
                 replyTo: q.queue
             })
@@ -161,7 +155,6 @@ Exchange.prototype.replyToRPC = async function (msg, reply) {
     });
     return
 }
-
 
 module.exports = {
     Exchange,

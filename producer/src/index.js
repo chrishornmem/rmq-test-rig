@@ -20,7 +20,10 @@ connect(process.env.RMQ_HOST).then(() => {
     exchange = new Exchange('exchange')
     return exchange.initialzeDirectRPC()
 }).then(() => {
+    return exchange.initializeExchange()
+}).then(() => {
     setInterval(sendRPC, 1000);
+    setInterval(publish, 2000);
     // timer = setInterval(addBinding, 1000)
 }).catch((error) => {
     logger.error(error)
@@ -135,13 +138,11 @@ const publish = function () {
 //publish()
 
 const sendRPC = function () {
-    exchange.sendRPCMessage({ msg: count, key: bindings[bindingIndex] })
+    exchange.sendRPCMessage('rpc_queue', { msg: count, key: "RPC" })
         .then(() => {
-            logger.info(`Message ${count} was sent using ${bindings[bindingIndex]}`);
+            logger.info(`Direct RPC Message ${count} was sent`);
             if (count === 3) count = 0;
             count++;
-            bindingIndex++;
-            if (bindingIndex === bindings.length) bindingIndex = 0;
         }).catch((err) =>  {
             logger.error(err)
            logger.error("Message was rejected...  Boo!");
