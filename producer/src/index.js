@@ -10,7 +10,7 @@ const bodyParser = require('body-parser');
 const errorHandler = require('errorhandler');
 
 const { connect, Exchange } = require('./rmq')
-let exchange, timer
+let exchange
 connect(process.env.RMQ_HOST).then(() => {
     exchange = new Exchange('exchange')
     return exchange.initializeExchange()

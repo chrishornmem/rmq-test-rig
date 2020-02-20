@@ -113,6 +113,8 @@ async function addBinding() {
         }
     } else {
         clearInterval(timer)
+        logger.info("UNSUBSCRIBING FROM:"+initialBindings[0])
+        exchange.unsubscribe(process.env.QUEUE, initialBindings[0])
     }
 }
 

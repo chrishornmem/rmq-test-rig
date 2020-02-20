@@ -46,6 +46,7 @@ Exchange = function (name, type = 'direct', options = { durable: false }) {
     this.name = name
     this.type = type
     this.options = options
+    this.queues = {}
 }
 
 Exchange.prototype.initializeExchange = async function () {
@@ -60,26 +61,36 @@ Exchange.prototype.initializeExchange = async function () {
             async setup(channel) {
                 // `channel` here is a regular amqplib `ConfirmChannel`.
                 // Note that `this` here is the channelWrapper instance.
+                this.context.channel = channel
                 return channel.assertExchange(self.name, self.type, self.options)
             }
         });
         self.directChannel = await connection.createChannel({
             json: true,
             async setup(channel) {
-                const q = await channel.assertQueue('', { exclusive: true });
-                this.context.responseEmitter = new EventEmitter()
-                this.context.responseEmitter.setMaxListeners(0)
-                this.context.q = q;
-                channel.consume(
-                    q.queue,
-                    msg => {
-                        self.directChannel.context.responseEmitter.emit(
-                            msg.properties.correlationId,
-                            JSON.parse(msg.content.toString('utf8'))
-                        )
-                    },
-                    { noAck: true }
-                )
+                try {
+                    const q = await channel.assertQueue('', { exclusive: true });
+                    this.context.responseEmitter = new EventEmitter()
+                    this.context.responseEmitter.setMaxListeners(0)
+                    this.context.q = q;
+                    this.context.channel = channel
+    
+                    let consume = await channel.consume(
+                        q.queue,
+                        msg => {
+                            self.directChannel.context.responseEmitter.emit(
+                                msg.properties.correlationId,
+                                JSON.parse(msg.content.toString('utf8'))
+                            )
+                        },
+                        { noAck: true }
+                    )
+                    this.context.directChannelConsumerTag = consume.consumerTag
+                    logger.info("this.context.directChannelConsumerTag")
+                    logger.info(this.context.directChannelConsumerTag)
+                } catch (e) {
+                    logger.error(e)
+                }
             }
         });
         return true
@@ -105,14 +116,44 @@ Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey
     if (typeof messageTtl !== 'number') throw "Invalid messageTtl parameter, expecting number"
 
     let self = this
-    this.exchangeChannel.addSetup(function (channel) {
-        return Promise.all([
-            channel.assertQueue(queue, {messageTtl:messageTtl}),
-            channel.bindQueue(queue, self.name, routingKey),
-            channel.prefetch(prefetch),
-            channel.consume(queue, consumeHandler)
-        ])
+    
+    self.addQueue(queue, routingKey)
+
+    this.exchangeChannel.addSetup(async function (channel) {
+        try {
+            await channel.assertQueue(queue, {messageTtl:messageTtl})
+            await channel.bindQueue(queue, self.name, routingKey)
+            await channel.prefetch(prefetch)
+            let consume = await channel.consume(queue, consumeHandler)
+            self.addConsumer(queue, routingKey, consume.consumerTag)
+        } catch (e) {
+            logger.error(e)
+            throw e
+        }        
     });
+}
+
+Exchange.prototype.addQueue = function (queue, routingKey) {
+    let index = queue + '-' + routingKey
+    if (!this.queues[index]) this.queues[index] = {}
+}
+
+Exchange.prototype.addConsumer = function (queue, routingKey, consumerTag) {
+    let index = queue + '-' + routingKey
+    if (!this.queues[index]) this.queues[index] = {}
+    this.queues[index].consumerTag = consumerTag
+}
+
+Exchange.prototype.unsubscribe = function (queue, routingKey = queue) {
+    logger.info("/unsubscribe")
+    let self = this
+    let index = queue + '-' + routingKey
+
+    if (!this.queues[index]) throw "Unknown queue-routingKey:" + index
+    let tag = this.queues[index].consumerTag
+    logger.info("tag:"+tag)
+    if (!tag || !this.exchangeChannel) return false
+    return this.exchangeChannel.context.channel.unbindQueue(queue, self.name, routingKey)
 }
 
 /**
