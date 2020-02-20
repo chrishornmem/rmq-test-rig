@@ -18,6 +18,7 @@ connect(process.env.RMQ_HOST).then(() => {
     return exchange.subscribe('rpc_queue', handleRPCMessage)
 }).then(() => {
     timer = setInterval(addBinding, 1000)
+    setInterval(sendRPC, 2000);
 }).catch((error) => {
     logger.error(error)
     logger.error("Failed to connect")
@@ -74,7 +75,6 @@ app.get('/*', function (req, res, next) {
 if ('development' == app.get('env')) {
     app.use(errorHandler());
 }
-//const connection = amqp.connect([process.env.RMQ_HOST], {json:true});
 
 let bindings = require('../binding/bindings.json');
 let initialBindings = [];
@@ -98,7 +98,6 @@ function handleRPCMessage(params) {
     const msg = JSON.parse(params.content.toString('utf8'));
     logger.info("got msg:" + JSON.stringify(msg))
     exchange.replyToRPC(params, {reply:'replying to RPC'})
-
 }
 
 async function addBinding() {
@@ -115,6 +114,20 @@ async function addBinding() {
     } else {
         clearInterval(timer)
     }
+}
+
+let rpcCount = 1;
+
+const sendRPC = function () {
+    exchange.sendRPCMessage('producer', { msg: `message ${rpcCount} from worker ${process.env.QUEUE}` })
+        .then(() => {
+            logger.info(`Direct RPC Message sent from worker`);
+            rpcCount++;
+        }).catch((err) =>  {
+        logger.error(err)
+           logger.error("Message was rejected...  Boo!");
+           rpcCount++;
+        });
 }
 
 server.listen(theport);
