@@ -19,12 +19,14 @@ connect(process.env.RMQ_HOST).then(() => {
     exchange = new Exchange('exchange')
     return exchange.initializeExchange()
 }).then(() => {
+    logger.info("subscribing to rpc_queue")
     return exchange.subscribe('rpc_queue', handleMessage)
 // }).then(() => {
 //     timer = setInterval(addBinding, 1000)
 }).catch((error) => {
     logger.error(error)
-    logger.error("Failed to connect");
+    logger.error("Failed to connect")
+    process.exit(0)
 });
 // Bring in the routes for the API (delete the default routes)
 

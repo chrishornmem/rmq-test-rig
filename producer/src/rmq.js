@@ -2,21 +2,32 @@ const logger = require('debug-level')('rmq-test-rig')
 const amqp = require('amqp-connection-manager')
 const EventEmitter = require('events')
 const { uuid } = require('uuidv4')
-const REPLY_QUEUE = 'amq.rabbitmq.reply-to'
+const RMQ_RPC_TIMEOUT = 10000
+const RMQ_CONNECT_TIMEOUT = 120 * 1000 // 2 mins
 
 let connection;
 
 const connect = async (host) => {
     if (!host) throw new Error("Missing host param")
-    connection = amqp.connect([host], { json: true })
-    connection.on('connect', async function () {
-        logger.info('Connected!')
-        return Promise.resolve()
-    })
-    connection.on('disconnect', function (params) {
-        logger.info('Disconnected.')
-        return Promise.reject("Disconnected")
-    })
+    return new Promise((resolve, reject) => {
+        connection = amqp.connect([host], { json: true })
+
+        let timer = setTimeout(() => {
+            logger.error(`/connect - could not connect to RMQ network within ${RMQ_CONNECT_TIMEOUT / 1000}s`)
+            reject({ success: false, message: `/connect - could not connect to RMQ network within ${RMQ_CONNECT_TIMEOUT / 1000}s` })
+        }, RMQ_CONNECT_TIMEOUT)
+
+        connection.on('connect', async function () {
+            logger.info('Connected!')
+            clearTimeout(timer)
+            resolve({ success: true, message: "connected" })
+        })
+        connection.on('disconnect', function (params) {
+            logger.info('Disconnected.')
+            // reject({ success: false, message: "disconnected" })
+        })
+    });
+
 }
 
 /**
@@ -47,7 +58,7 @@ Exchange.prototype.initialzeDirectRPC = async function () {
             const q = await channel.assertQueue('', { exclusive: true });
             this.context.responseEmitter = new EventEmitter()
             this.context.responseEmitter.setMaxListeners(0)
-            this.context.q = q; 
+            this.context.q = q;
             channel.consume(
                 q.queue,
                 msg => {
@@ -66,38 +77,17 @@ Exchange.prototype.initialzeDirectRPC = async function () {
     return true;
 }
 
-Exchange.prototype.initializeExchange = async function (rpc = false) {
+Exchange.prototype.initializeExchange = async function () {
     let self = this;
     try {
-        if (rpc) {
-            self.exchangeChannel = await connection.createChannel({
-                json: true,
-                setup: channel => {
-                    channel.assertExchange(self.name, self.type)
-                    self.exchangeChannel.context.responseEmitter = new EventEmitter()
-                    self.exchangeChannel.context.responseEmitter.setMaxListeners(0)
-                    channel.consume(
-                        REPLY_QUEUE,
-                        msg => {
-                            self.exchangeChannel.context.responseEmitter.emit(
-                                msg.properties.correlationId,
-                                JSON.parse(msg.content.toString('utf8'))
-                            )
-                        },
-                        { noAck: true }
-                    )
-                }
-            })
-        } else {
-            self.exchangeChannel = await connection.createChannel({
-                json: true,
-                setup: function (channel) {
-                    // `channel` here is a regular amqplib `ConfirmChannel`.
-                    // Note that `this` here is the channelWrapper instance.
-                    return channel.assertExchange(self.name, self.type, self.options)
-                }
-            });
-        }
+        self.exchangeChannel = await connection.createChannel({
+            json: true,
+            setup: function (channel) {
+                // `channel` here is a regular amqplib `ConfirmChannel`.
+                // Note that `this` here is the channelWrapper instance.
+                return channel.assertExchange(self.name, self.type, self.options)
+            }
+        });
         return true
     } catch (error) {
         throw new Error("Failed to initialize exchange")
@@ -128,75 +118,50 @@ Exchange.prototype.publish = async function (routingKey, message, options) {
     return this.exchangeChannel.publish(this.name, routingKey, message, options);
 }
 
-// Exchange.prototype.sendRPCMessage = function (message) {
-//     logger.info("/sendRPCMessage")
-//     logger.info(message)
-//     let self = this
-
-//     return new Promise((resolve, reject) => {
-//         const correlationId = uuid()
-//         let timer
-
-//         self.directChannel.context.responseEmitter.once(correlationId, (response) => {
-//             clearTimeout(timer)
-//             resolve(response)
-//         })
-
-//         timer = setTimeout(() => {
-//             logger.error("/sendRPCMessage - response not received within 10s")
-//             reject("Message not received within required time")
-//         }, 10000)
-
-//         self.directChannel.sendToQueue('rpc_queue', message, {
-//             correlationId,
-//             replyTo: REPLY_QUEUE,
-//             contentType: 'application/json'
-//         })
-//     })
-// }
-
 Exchange.prototype.sendRPCMessage = async function (message) {
 
     let self = this;
-    // const id = uuid();
-    const q = self.directChannel.context.q;
-
-    // self.directChannel.sendToQueue('rpc_queue', new Buffer(message.toString()),
-    // { correlationId: id, replyTo: q.queue })
-    // .then((message) => {
-    //   console.log('Message sent');
-    //   console.log(message)
-    // }).catch((err) => {
-    //   console.log('Message was rejected:', err.stack);
-    // //   self.directChannel.close();
-    // //   connection.close();
-    //     throw err
-    // });
-    // return true
-
 
     return new Promise((resolve, reject) => {
-        const correlationId = uuid()
-        let timer
 
-        self.directChannel.context.responseEmitter.once(correlationId, (response) => {
-            clearTimeout(timer)
-            resolve(response)
-        })
+        if (!self.directChannel ||
+            !self.directChannel.context ||
+            !self.directChannel.context.responseEmitter) {
 
-        timer = setTimeout(() => {
-            logger.error("/sendRPCMessage - response not received within 10s")
-            reject("Message not received within required time")
-        }, 10000)
+            reject("Channel not initialized")
 
-        self.directChannel.sendToQueue('rpc_queue', message, {
-            correlationId,
-            replyTo: q.queue
-        })
+        } else {
+
+            let timer
+
+            const q = self.directChannel.context.q;
+            const correlationId = uuid()
+
+            self.directChannel.context.responseEmitter.once(correlationId, (response) => {
+                clearTimeout(timer)
+                resolve(response)
+            })
+
+            timer = setTimeout(() => {
+                logger.error("/sendRPCMessage - response not received within 10s")
+                reject("Message not received within required time")
+            }, RMQ_RPC_TIMEOUT)
+
+            self.directChannel.sendToQueue('rpc_queue', message, {
+                correlationId,
+                replyTo: q.queue
+            })
+        }
     })
-
 }
 
+Exchange.prototype.replyToRPC = async function (msg, reply) {
+    let self = this;
+    self.exchangeChannel.sendToQueue(msg.properties.replyTo, reply, {
+        correlationId: msg.properties.correlationId
+    });
+    return
+}
 
 module.exports = {
     Exchange,

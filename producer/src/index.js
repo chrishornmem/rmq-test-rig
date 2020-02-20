@@ -25,6 +25,7 @@ connect(process.env.RMQ_HOST).then(() => {
 }).catch((error) => {
     logger.error(error)
     logger.error("Failed to connect");
+    process.exit(0)
 });
 
 // Bring in the routes for the API (delete the default routes)
