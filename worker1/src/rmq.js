@@ -1,4 +1,4 @@
-const logger = require('debug-level')('rmq-test-rig')
+const logger = require('debug-level')('authenticator')
 const amqp = require('amqp-connection-manager')
 const EventEmitter = require('events')
 const { uuid } = require('uuidv4')
@@ -26,6 +26,7 @@ const connect = async (host = RMQ_HOST) => {
             resolve({ success: true, message: "connected" })
         })
         connection.on('disconnect', function (params) {
+            logger.error(params)
             logger.error('Disconnected.')
         })
     });
@@ -106,7 +107,7 @@ Exchange.prototype.initializeExchange = async function () {
  * @param {number} [messageTtl] optional time to live for messages on the queue, default is process.env.RMQ_MESSAGE_TTL || 10000
  */
 Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey = queue, prefetch = 1, messageTtl = RMQ_MESSAGE_TTL ) {
-    logger.info("/subscribe")
+    console.log("/subscribe")
 
     if (typeof queue !== 'string') throw "Missing or invalid queue parameter, expecting string"
     if (typeof consumeHandler !== 'function') throw "Missing or invalid consumeHandler parameter, expecting function"
@@ -123,7 +124,8 @@ Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey
             await channel.prefetch(prefetch)
             await channel.consume(queue, consumeHandler)
         } catch (e) {
-            logger.error(e)
+            console.log("failed to subscribe")
+            console.log(e)
             throw e
         }        
     });
