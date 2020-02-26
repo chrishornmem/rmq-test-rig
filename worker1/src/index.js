@@ -9,7 +9,7 @@ const methodOverride = require('method-override');
 const bodyParser = require('body-parser');
 const errorHandler = require('errorhandler');
 
-const { connect, Exchange } = require('./rmq')
+const { connect, Exchange } = require('rmq-wrapper')
 let exchange, timer
 connect(process.env.RMQ_HOST).then(() => {
     exchange = new Exchange('exchange')
