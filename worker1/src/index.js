@@ -122,7 +122,8 @@ let rpcCount = 1;
 
 const sendRPC = function () {
     exchange.sendRPCMessage('producer', { msg: `message ${rpcCount} from worker ${process.env.QUEUE}` })
-        .then(() => {
+        .then((data) => {
+            logger.info(data)
             logger.info(`Direct RPC Message sent from worker`);
             rpcCount++;
         }).catch((err) =>  {

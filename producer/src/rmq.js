@@ -131,8 +131,13 @@ Exchange.prototype.subscribe = async function (queue, consumeHandler, routingKey
 
 Exchange.prototype.unsubscribe = function (queue, routingKey = queue) {
     logger.info("/unsubscribe")
-    if (!this.exchangeChannel) return false
-    return this.exchangeChannel.context.channel.unbindQueue(queue, this.name, routingKey)
+    if (!this.exchangeChannel ||
+        !this.exchangeChannel.context ||
+        !this.exchangeChannel.context.channel) {
+        return false
+    } else {
+        return this.exchangeChannel.context.channel.unbindQueue(queue, this.name, routingKey)
+    }
 }
 
 /**
